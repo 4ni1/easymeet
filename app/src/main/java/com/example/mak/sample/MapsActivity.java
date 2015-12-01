@@ -7,8 +7,12 @@ import android.provider.Settings;
 import android.support.v4.app.FragmentActivity;
 import android.os.Bundle;
 import android.support.v7.app.AlertDialog;
+import android.support.v7.app.AppCompatActivity;
+import android.support.v7.widget.Toolbar;
 import android.util.Log;
 import android.content.IntentSender;
+import android.view.Menu;
+import android.view.MenuInflater;
 
 import com.firebase.client.AuthData;
 import com.firebase.client.Firebase;
@@ -29,7 +33,7 @@ import com.google.android.gms.maps.model.MarkerOptions;
 import java.util.HashMap;
 import java.util.Map;
 
-public class MapsActivity extends FragmentActivity implements
+public class MapsActivity extends AppCompatActivity implements
         ConnectionCallbacks,
         OnConnectionFailedListener,
         LocationListener {
@@ -53,6 +57,7 @@ public class MapsActivity extends FragmentActivity implements
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_maps);
+
         setUpMapIfNeeded();
         buildGoogleApiClient();
 
@@ -61,11 +66,17 @@ public class MapsActivity extends FragmentActivity implements
                 .setInterval(10 * 1000)        // 10 seconds, in milliseconds
                 .setFastestInterval(1 * 1000); // 1 second, in milliseconds
         Firebase.setAndroidContext(this);
-        Log.i(TAG, UID);
+        if (mLocationRequest != null){
+            Log.d(TAG, "Location Request Created");
+        }
+        Log.d(TAG, UID);
+    }
 
-        mFirebaseMaps = new Firebase(FIREBASE_URL);
-        mFirebaseMaps.authAnonymously(authResultHandler);
-
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        MenuInflater inflater = getMenuInflater();
+        inflater.inflate(R.menu.menu, menu);
+        return true;
     }
 
     @Override
@@ -94,7 +105,7 @@ public class MapsActivity extends FragmentActivity implements
             mMap.setMyLocationEnabled(true);
             // Check if we were successful in obtaining the map.
             if (mMap != null) {
-                Log.i(TAG, "Map Obtained!");
+                Log.d(TAG, "Map Obtained!");
             }
         }
     }
@@ -108,22 +119,30 @@ public class MapsActivity extends FragmentActivity implements
     }
 
     private void handleNewLocation(Location location) {
-        Log.i(TAG, "In Handle New Location");
-        Log.d(TAG, location.toString());
+        Log.d(TAG, "In Handle New Location");
+        Log.d(TAG, "Location : " + location.toString());
         double currentLatitude = location.getLatitude();
         double currentLongitude = location.getLongitude();
+
         LatLng latLng = new LatLng(currentLatitude, currentLongitude);
+
         mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
+
         Coords.put("Latitude", currentLatitude);
         Coords.put("Longitude", currentLongitude);
-        Log.i(TAG, UID);
+
+        Log.d(TAG, "Unique Device ID: " + UID);
+
         mFirebaseMaps.child("maps").child(UID).setValue(Coords);
     }
 
 
     @Override
     public void onConnected(Bundle bundle) {
-        Log.i(TAG, "On Connected Method");
+        Log.d(TAG, "On Connected Method");
+        mFirebaseMaps = new Firebase(FIREBASE_URL);
+        mFirebaseMaps.authAnonymously(authResultHandler);
+
         location = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
         if (location == null) {
             LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, this);
@@ -135,7 +154,7 @@ public class MapsActivity extends FragmentActivity implements
 
     @Override
     public void onConnectionSuspended(int i) {
-
+        Log.d(TAG, "On Connection Suspended");
     }
 
     @Override
@@ -177,26 +196,26 @@ public class MapsActivity extends FragmentActivity implements
         @Override
         public void onAuthenticated(AuthData authData) {
             // Authenticated successfully with payload authData
-            Log.i(TAG, "Firebase Successful Authentication : " + authData.toString());
+            Log.d(TAG, "Firebase Successful Authentication : " + authData.toString());
         }
         @Override
         public void onAuthenticationError(FirebaseError firebaseError) {
             // Authenticated failed with error firebaseError
-            Log.i(TAG, "Firebase Unsuccessful Authentication : " + firebaseError.toString());
+            Log.d(TAG, "Firebase Unsuccessful Authentication : " + firebaseError.toString());
         }
     };
 
 
     @Override
     public void onSaveInstanceState(Bundle savedInstanceState) {
-        Log.i(TAG, "Saving Instance");
+        Log.d(TAG, "Saving Instance");
         savedInstanceState.putParcelable("Location", location);
         super.onSaveInstanceState(savedInstanceState);
     }
 
     @Override
     public void onRestoreInstanceState(Bundle savedInstanceState){
-        Log.i(TAG, "Updating values from bundle");
+        Log.d(TAG, "Restoring values from bundle");
         if (savedInstanceState != null) {
             if (savedInstanceState.keySet().contains("Location")) {
                 location = savedInstanceState.getParcelable("Location");
