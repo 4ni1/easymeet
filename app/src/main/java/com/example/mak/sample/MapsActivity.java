@@ -15,21 +15,26 @@ import android.view.Menu;
 import android.view.MenuInflater;
 
 import com.firebase.client.AuthData;
+import com.firebase.client.DataSnapshot;
 import com.firebase.client.Firebase;
 import com.firebase.client.FirebaseError;
+import com.firebase.client.ValueEventListener;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.GoogleApiClient.ConnectionCallbacks;
 import com.google.android.gms.common.api.GoogleApiClient.OnConnectionFailedListener;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.location.places.Places;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.location.LocationListener;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.LatLngBounds;
 import com.google.android.gms.maps.model.MarkerOptions;
 
+import java.security.ProtectionDomain;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -41,8 +46,7 @@ public class MapsActivity extends AppCompatActivity implements
     // Firebase Related
     private static final String FIREBASE_URL = "https://sweltering-inferno-3584.firebaseio.com/";
     private Firebase mFirebaseMaps;
-    private Map<String, Map<String, Double>> mFirebaseMapsId  = new HashMap<String, Map<String, Double>>();
-    private Map Coords = new HashMap();
+    private ValueEventListener mFirebaseListener;
     private static String UID = Build.SERIAL;
 
     protected GoogleMap mMap;
@@ -51,6 +55,7 @@ public class MapsActivity extends AppCompatActivity implements
     protected GoogleApiClient mGoogleApiClient;
     private LocationRequest mLocationRequest;
     protected Location location;
+    private LatLngBounds.Builder latlngbounds;
 
 
     @Override
@@ -65,11 +70,17 @@ public class MapsActivity extends AppCompatActivity implements
                 .setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY)
                 .setInterval(10 * 1000)        // 10 seconds, in milliseconds
                 .setFastestInterval(1 * 1000); // 1 second, in milliseconds
-        Firebase.setAndroidContext(this);
+
         if (mLocationRequest != null){
             Log.d(TAG, "Location Request Created");
         }
+
+        // Unique ID to differentiate the Users
         Log.d(TAG, UID);
+
+        // Firebase Initialization
+        Firebase.setAndroidContext(this);
+
     }
 
     @Override
@@ -80,21 +91,58 @@ public class MapsActivity extends AppCompatActivity implements
     }
 
     @Override
+    protected void onStart(){
+        Log.d(TAG, "On Start");
+        super.onStart();
+        mFirebaseMaps = new Firebase(FIREBASE_URL).child("maps");
+        mFirebaseMaps.authAnonymously(authResultHandler);
+
+    }
+    @Override
     protected void onResume() {
+        Log.d(TAG, "on Resume");
         super.onResume();
         setUpMapIfNeeded();
         mGoogleApiClient.connect();
+        mFirebaseListener = mFirebaseMaps.addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot snapshot) {
+                latlngbounds = new LatLngBounds.Builder();
+                Log.d(TAG, "Firebase on Data Change : " + snapshot.getValue().toString());
+                mMap.clear(); // TODO : See if clearing and redrawing the map in main thread affects performance
+                for (DataSnapshot entry : snapshot.getChildren()){
+                    //Log.d(TAG, entry.getKey().toString());
+                    if ( !UID.equals(entry.getKey())) {
+                        Log.d(TAG, "Updating Marker for : " + entry.getKey());
+                        Coordinates latlng = entry.getValue(Coordinates.class);
+                        LatLng userlatlng = new LatLng(latlng.getLatitude(), latlng.getLongitude());
+                        latlngbounds.include(userlatlng);
+                        mMap.addMarker(new MarkerOptions()
+                                .position(userlatlng)
+                                .title(entry.getKey()));
+                    }
+                }
+                Log.d(TAG, latlngbounds.build().toString());
+                mMap.moveCamera(CameraUpdateFactory.newLatLngBounds(latlngbounds.build(),70));
+            }
+
+            @Override
+            public void onCancelled(FirebaseError firebaseError) {
+                Log.d(TAG, "The read failed: " + firebaseError.getMessage());
+            }
+        });
     }
 
     @Override
     protected void onPause() {
         super.onPause();
+        Log.d(TAG, "on Pause");
         if (mGoogleApiClient.isConnected()) {
             LocationServices.FusedLocationApi.removeLocationUpdates(mGoogleApiClient, this);
             mGoogleApiClient.disconnect();
         }
+        mFirebaseMaps.removeEventListener(mFirebaseListener);
     }
-
 
     private void setUpMapIfNeeded() {
         // Do a null check to confirm that we have not already instantiated the map.
@@ -114,7 +162,9 @@ public class MapsActivity extends AppCompatActivity implements
         mGoogleApiClient = new GoogleApiClient.Builder(this)
                 .addConnectionCallbacks(this)
                 .addOnConnectionFailedListener(this)
-                .addApi(LocationServices.API)
+                .addApi(LocationServices.API) // Added Maps API
+                .addApi(Places.GEO_DATA_API) // Added Places GEO DATA
+                .addApi(Places.PLACE_DETECTION_API) // Added Place Detection API
                 .build();
     }
 
@@ -124,24 +174,21 @@ public class MapsActivity extends AppCompatActivity implements
         double currentLatitude = location.getLatitude();
         double currentLongitude = location.getLongitude();
 
+        Coordinates coords = new Coordinates(currentLatitude, currentLongitude);
+
         LatLng latLng = new LatLng(currentLatitude, currentLongitude);
 
         mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
 
-        Coords.put("Latitude", currentLatitude);
-        Coords.put("Longitude", currentLongitude);
-
         Log.d(TAG, "Unique Device ID: " + UID);
 
-        mFirebaseMaps.child("maps").child(UID).setValue(Coords);
+        mFirebaseMaps.child(UID).setValue(coords);
     }
 
 
     @Override
     public void onConnected(Bundle bundle) {
         Log.d(TAG, "On Connected Method");
-        mFirebaseMaps = new Firebase(FIREBASE_URL);
-        mFirebaseMaps.authAnonymously(authResultHandler);
 
         location = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
         if (location == null) {
