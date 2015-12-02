@@ -41,7 +41,7 @@ import java.util.Map;
 public class MapsActivity extends AppCompatActivity implements
         ConnectionCallbacks,
         OnConnectionFailedListener,
-        LocationListener {
+        LocationListener{
 
     // Firebase Related
     private static final String FIREBASE_URL = "https://sweltering-inferno-3584.firebaseio.com/";
@@ -98,6 +98,7 @@ public class MapsActivity extends AppCompatActivity implements
         mFirebaseMaps.authAnonymously(authResultHandler);
 
     }
+
     @Override
     protected void onResume() {
         Log.d(TAG, "on Resume");
@@ -108,12 +109,18 @@ public class MapsActivity extends AppCompatActivity implements
             @Override
             public void onDataChange(DataSnapshot snapshot) {
                 latlngbounds = new LatLngBounds.Builder();
+
                 Log.d(TAG, "Firebase on Data Change : " + snapshot.getValue().toString());
+
                 mMap.clear(); // TODO : See if clearing and redrawing the map in main thread affects performance
+
+                // Include The current user as part of the bounds
+                latlngbounds.include(new LatLng(location.getLatitude(), location.getLongitude()));
+
                 for (DataSnapshot entry : snapshot.getChildren()){
                     //Log.d(TAG, entry.getKey().toString());
                     if ( !UID.equals(entry.getKey())) {
-                        Log.d(TAG, "Updating Marker for : " + entry.getKey());
+                        //Log.d(TAG, "Updating Marker for : " + entry.getKey());
                         Coordinates latlng = entry.getValue(Coordinates.class);
                         LatLng userlatlng = new LatLng(latlng.getLatitude(), latlng.getLongitude());
                         latlngbounds.include(userlatlng);
@@ -123,7 +130,15 @@ public class MapsActivity extends AppCompatActivity implements
                     }
                 }
                 Log.d(TAG, latlngbounds.build().toString());
-                mMap.moveCamera(CameraUpdateFactory.newLatLngBounds(latlngbounds.build(),70));
+                mMap.moveCamera(CameraUpdateFactory.newLatLngBounds(latlngbounds.build(), 70));
+
+                mMap.setOnMyLocationButtonClickListener(new GoogleMap.OnMyLocationButtonClickListener() {
+                    @Override
+                    public boolean onMyLocationButtonClick() {
+                        mMap.animateCamera(CameraUpdateFactory.newLatLngBounds(latlngbounds.build(), 70));
+                        return true;
+                    }
+                });
             }
 
             @Override
@@ -150,9 +165,9 @@ public class MapsActivity extends AppCompatActivity implements
             // Try to obtain the map from the SupportMapFragment.
             mMap = ((SupportMapFragment) getSupportFragmentManager().findFragmentById(R.id.map))
                     .getMap();
-            mMap.setMyLocationEnabled(true);
             // Check if we were successful in obtaining the map.
             if (mMap != null) {
+                mMap.setMyLocationEnabled(true);
                 Log.d(TAG, "Map Obtained!");
             }
         }
