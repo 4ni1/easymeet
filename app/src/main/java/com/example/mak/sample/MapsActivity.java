@@ -2,6 +2,7 @@ package com.example.mak.sample;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.location.Location;
+import android.os.AsyncTask;
 import android.os.Build;
 import android.provider.Settings;
 import android.support.v4.app.FragmentActivity;
@@ -13,6 +14,7 @@ import android.util.Log;
 import android.content.IntentSender;
 import android.view.Menu;
 import android.view.MenuInflater;
+import android.view.MenuItem;
 
 import com.firebase.client.AuthData;
 import com.firebase.client.DataSnapshot;
@@ -30,13 +32,23 @@ import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.location.LocationListener;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.SupportMapFragment;
+import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.LatLngBounds;
+import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 
 import java.security.ProtectionDomain;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+
+import se.walkercrou.places.Param;
+import se.walkercrou.places.TypeParam;
+import se.walkercrou.places.Types;
 
 public class MapsActivity extends AppCompatActivity implements
         ConnectionCallbacks,
@@ -46,23 +58,32 @@ public class MapsActivity extends AppCompatActivity implements
     // Firebase Related
     private static final String FIREBASE_URL = "https://sweltering-inferno-3584.firebaseio.com/";
     private Firebase mFirebaseMaps;
-    private ValueEventListener mFirebaseListener;
+    private Firebase mFirebasePlaces;
+    private ValueEventListener mFirebaseMapsListener;
+    private ValueEventListener mFirebasePlacesListener;
     private static String UID = Build.SERIAL;
+
+    private List<Marker> allMapMarkers = new ArrayList<>();
+    private List<Marker> allPlaceMarkers = new ArrayList<>();
 
     protected GoogleMap mMap;
     private final static int CONNECTION_FAILURE_RESOLUTION_REQUEST = 9000;
     protected static final String TAG = "EasyMeet";
+    protected static final String GOOGLE_SERVER_API_KEY="AIzaSyA8bwa3ynMQHnJwJrHxKVKn4oz1P5uAkWk";
     protected GoogleApiClient mGoogleApiClient;
     private LocationRequest mLocationRequest;
     protected Location location;
     private LatLngBounds.Builder latlngbounds;
+    private LatLngBounds latLngBoundsUpdate;
+    private LatLng centroid;
+
+    private SupportMapFragment mapFragment;
 
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_maps);
-
         setUpMapIfNeeded();
         buildGoogleApiClient();
 
@@ -91,11 +112,52 @@ public class MapsActivity extends AppCompatActivity implements
     }
 
     @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        // Handle item selection
+        switch (item.getItemId()) {
+            case R.id.action_refresh:
+                show_places();
+                return true;
+            default:
+                return super.onOptionsItemSelected(item);
+        }
+    }
+
+    private void show_places(){
+        GetPlaces places = new GetPlaces(getApplicationContext(), mFirebaseMaps, mMap);
+        places.execute(GOOGLE_SERVER_API_KEY, String.valueOf(centroid.latitude),
+                String.valueOf(centroid.longitude), String.valueOf(1000.0), String.valueOf(10));
+
+    }
+
+    private void display_places(){
+        Intent myIntent = new Intent(getApplicationContext(), PlacesViewActivity.class);
+        startActivity(myIntent);
+    }
+
+    private void remove_all_map_markers(){
+        if (!allMapMarkers.isEmpty()){
+            allMapMarkers.clear();
+        }
+
+    }
+
+    private void remove_all_place_markers(){
+        if (!allPlaceMarkers.isEmpty()){
+            allPlaceMarkers.clear();
+        }
+
+    }
+
+    @Override
     protected void onStart(){
         Log.d(TAG, "On Start");
         super.onStart();
         mFirebaseMaps = new Firebase(FIREBASE_URL).child("maps");
-        mFirebaseMaps.authAnonymously(authResultHandler);
+        mFirebaseMaps.authAnonymously(authMapsResultHandler);
+
+        mFirebasePlaces = new Firebase(FIREBASE_URL).child("places");
+        mFirebasePlaces.authAnonymously(authPlacesResultHandler);
 
     }
 
@@ -103,17 +165,18 @@ public class MapsActivity extends AppCompatActivity implements
     protected void onResume() {
         Log.d(TAG, "on Resume");
         super.onResume();
+        //mapFragment.getRetainInstance();
         setUpMapIfNeeded();
         mGoogleApiClient.connect();
-        mFirebaseListener = mFirebaseMaps.addValueEventListener(new ValueEventListener() {
+        mFirebaseMapsListener = mFirebaseMaps.addValueEventListener(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot snapshot) {
                 latlngbounds = new LatLngBounds.Builder();
 
                 Log.d(TAG, "Firebase on Data Change : " + snapshot.getValue().toString());
 
-                mMap.clear(); // TODO : See if clearing and redrawing the map in main thread affects performance
-
+                remove_all_map_markers(); // TODO : See if clearing and redrawing the map in main thread affects performance
+                //mMap.clear();
                 // Include The current user as part of the bounds
                 latlngbounds.include(new LatLng(location.getLatitude(), location.getLongitude()));
 
@@ -124,18 +187,29 @@ public class MapsActivity extends AppCompatActivity implements
                         Coordinates latlng = entry.getValue(Coordinates.class);
                         LatLng userlatlng = new LatLng(latlng.getLatitude(), latlng.getLongitude());
                         latlngbounds.include(userlatlng);
-                        mMap.addMarker(new MarkerOptions()
+                        Marker currentMarker;
+                        currentMarker = mMap.addMarker(new MarkerOptions()
                                 .position(userlatlng)
                                 .title(entry.getKey()));
+
+                        allMapMarkers.add(currentMarker);
                     }
                 }
-                Log.d(TAG, latlngbounds.build().toString());
-                mMap.moveCamera(CameraUpdateFactory.newLatLngBounds(latlngbounds.build(), 70));
+
+                latLngBoundsUpdate = latlngbounds.build();
+                Log.d(TAG, latLngBoundsUpdate.toString());
+                centroid = latLngBoundsUpdate.getCenter();
+                Marker centroidMarker = mMap.addMarker(new MarkerOptions()
+                        .position(centroid)
+                        .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_CYAN))
+                        .title("Centroid"));
+                allMapMarkers.add(centroidMarker);
+                mMap.moveCamera(CameraUpdateFactory.newLatLngBounds(latLngBoundsUpdate, 130));
 
                 mMap.setOnMyLocationButtonClickListener(new GoogleMap.OnMyLocationButtonClickListener() {
                     @Override
                     public boolean onMyLocationButtonClick() {
-                        mMap.animateCamera(CameraUpdateFactory.newLatLngBounds(latlngbounds.build(), 70));
+                        mMap.animateCamera(CameraUpdateFactory.newLatLngBounds(latLngBoundsUpdate, 130));
                         return true;
                     }
                 });
@@ -146,25 +220,60 @@ public class MapsActivity extends AppCompatActivity implements
                 Log.d(TAG, "The read failed: " + firebaseError.getMessage());
             }
         });
+
+
+        mFirebasePlacesListener = mFirebasePlaces.addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot snapshot) {
+                Log.d(TAG, "Firebase Places on Data Change");
+
+                remove_all_place_markers();
+
+                for (DataSnapshot entry : snapshot.getChildren()){
+                    SimplePlace place = entry.getValue(SimplePlace.class);
+                    LatLng placelatlng = new LatLng(place.getLatitude(), place.getLongitude());
+                    Marker currentPlaceMarker = mMap.addMarker(new MarkerOptions()
+                            .position(placelatlng)
+                            .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
+                            .title(place.getName()));
+                    allPlaceMarkers.add(currentPlaceMarker);
+                }
+
+
+            }
+
+            @Override
+            public void onCancelled(FirebaseError firebaseError) {
+                Log.d(TAG, "The read failed: " + firebaseError.getMessage());
+            }
+        });
+
+
     }
 
     @Override
     protected void onPause() {
         super.onPause();
+        //mapFragment.setRetainInstance(true);
         Log.d(TAG, "on Pause");
         if (mGoogleApiClient.isConnected()) {
             LocationServices.FusedLocationApi.removeLocationUpdates(mGoogleApiClient, this);
             mGoogleApiClient.disconnect();
         }
-        mFirebaseMaps.removeEventListener(mFirebaseListener);
+        mFirebaseMaps.removeEventListener(mFirebaseMapsListener);
+        mFirebasePlaces.removeEventListener(mFirebasePlacesListener);
+
     }
 
     private void setUpMapIfNeeded() {
         // Do a null check to confirm that we have not already instantiated the map.
         if (mMap == null) {
             // Try to obtain the map from the SupportMapFragment.
-            mMap = ((SupportMapFragment) getSupportFragmentManager().findFragmentById(R.id.map))
-                    .getMap();
+
+            mapFragment = (SupportMapFragment) getSupportFragmentManager().
+                    findFragmentById(R.id.map);
+            //mapFragment.setRetainInstance(true);
+            mMap = mapFragment.getMap();
             // Check if we were successful in obtaining the map.
             if (mMap != null) {
                 mMap.setMyLocationEnabled(true);
@@ -254,23 +363,38 @@ public class MapsActivity extends AppCompatActivity implements
     }
 
 
-    Firebase.AuthResultHandler authResultHandler = new Firebase.AuthResultHandler() {
+    Firebase.AuthResultHandler authMapsResultHandler = new Firebase.AuthResultHandler() {
         @Override
         public void onAuthenticated(AuthData authData) {
             // Authenticated successfully with payload authData
-            Log.d(TAG, "Firebase Successful Authentication : " + authData.toString());
+            Log.d(TAG, "Firebase Maps Successful Authentication : " + authData.toString());
         }
         @Override
         public void onAuthenticationError(FirebaseError firebaseError) {
             // Authenticated failed with error firebaseError
-            Log.d(TAG, "Firebase Unsuccessful Authentication : " + firebaseError.toString());
+            Log.d(TAG, "Firebase Maps Unsuccessful Authentication : " + firebaseError.toString());
         }
     };
+
+    Firebase.AuthResultHandler authPlacesResultHandler = new Firebase.AuthResultHandler() {
+        @Override
+        public void onAuthenticated(AuthData authData) {
+            // Authenticated successfully with payload authData
+            Log.d(TAG, "Firebase Places Successful Authentication : " + authData.toString());
+        }
+        @Override
+        public void onAuthenticationError(FirebaseError firebaseError) {
+            // Authenticated failed with error firebaseError
+            Log.d(TAG, "Firebase Places Unsuccessful Authentication : " + firebaseError.toString());
+        }
+    };
+
 
 
     @Override
     public void onSaveInstanceState(Bundle savedInstanceState) {
         Log.d(TAG, "Saving Instance");
+        //mapFragment.setRetainInstance(true);
         savedInstanceState.putParcelable("Location", location);
         super.onSaveInstanceState(savedInstanceState);
     }
@@ -279,6 +403,7 @@ public class MapsActivity extends AppCompatActivity implements
     public void onRestoreInstanceState(Bundle savedInstanceState){
         Log.d(TAG, "Restoring values from bundle");
         if (savedInstanceState != null) {
+            //mapFragment.getRetainInstance();
             if (savedInstanceState.keySet().contains("Location")) {
                 location = savedInstanceState.getParcelable("Location");
             }

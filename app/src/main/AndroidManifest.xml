@@ -43,6 +43,12 @@
 
 
         </activity>
+
+        <activity
+            android:name=".PlacesViewActivity"
+            android:label="@string/places"
+            />
+
     </application>
 
 </manifest>
