@@ -127,6 +127,7 @@ public class MapsActivity extends AppCompatActivity implements
         GetPlaces places = new GetPlaces(getApplicationContext(), mFirebaseMaps, mMap);
         places.execute(GOOGLE_SERVER_API_KEY, String.valueOf(centroid.latitude),
                 String.valueOf(centroid.longitude), String.valueOf(1000.0), String.valueOf(10));
+        //remove_all_place_markers();
 
     }
 
@@ -137,14 +138,16 @@ public class MapsActivity extends AppCompatActivity implements
 
     private void remove_all_map_markers(){
         if (!allMapMarkers.isEmpty()){
-            allMapMarkers.clear();
+            for (Marker marker : allMapMarkers)
+                marker.remove();
         }
 
     }
 
     private void remove_all_place_markers(){
         if (!allPlaceMarkers.isEmpty()){
-            allPlaceMarkers.clear();
+            for (Marker marker : allPlaceMarkers)
+                marker.remove();
         }
 
     }
@@ -180,9 +183,9 @@ public class MapsActivity extends AppCompatActivity implements
                 // Include The current user as part of the bounds
                 latlngbounds.include(new LatLng(location.getLatitude(), location.getLongitude()));
 
-                for (DataSnapshot entry : snapshot.getChildren()){
+                for (DataSnapshot entry : snapshot.getChildren()) {
                     //Log.d(TAG, entry.getKey().toString());
-                    if ( !UID.equals(entry.getKey())) {
+                    if (!UID.equals(entry.getKey())) {
                         //Log.d(TAG, "Updating Marker for : " + entry.getKey());
                         Coordinates latlng = entry.getValue(Coordinates.class);
                         LatLng userlatlng = new LatLng(latlng.getLatitude(), latlng.getLongitude());
@@ -235,7 +238,7 @@ public class MapsActivity extends AppCompatActivity implements
                     Marker currentPlaceMarker = mMap.addMarker(new MarkerOptions()
                             .position(placelatlng)
                             .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
-                            .title(place.getName()));
+                            .title("Name : " + place.getName() + " | Rating : "+String.valueOf(place.getRating())));
                     allPlaceMarkers.add(currentPlaceMarker);
                 }
 

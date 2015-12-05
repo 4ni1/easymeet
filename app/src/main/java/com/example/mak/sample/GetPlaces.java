@@ -78,8 +78,8 @@ public class GetPlaces extends AsyncTask <String, Void, List<Place>> {
                             Types.TYPE_RESTAURANT, Types.TYPE_FOOD)));
             for(Place place : places){
             SimplePlace firebasePlace = new SimplePlace(place.getPlaceId(), place.getName(),
-                    place.getLatitude(), place.getLongitude());
-                //Log.d(TAG, firebasePlace.toString());
+                    place.getLatitude(), place.getLongitude(), place.getRating());
+                Log.d(TAG, firebasePlace.toString());
                 mFirebasePlaces.child(place.getPlaceId()).setValue(firebasePlace);
             }
 
@@ -99,11 +99,12 @@ public class GetPlaces extends AsyncTask <String, Void, List<Place>> {
         if (!places.isEmpty()) {
             for (Place place : places) {
                 LatLng latlng = new LatLng(place.getLatitude(), place.getLongitude());
+            /*
                 mMap.addMarker(new MarkerOptions()
                         .position(latlng)
                         .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
                         .title(place.getName()));
-            /*    PlaceDetails placeDetails = new PlaceDetails(place.getPlaceId(), place.getGoogleUrl(),
+               PlaceDetails placeDetails = new PlaceDetails(place.getPlaceId(), place.getGoogleUrl(),
                         place.getHours(), place.getStatus(), place.getPrice(), place.getWebsite(),
                         place.getPhoneNumber(), place.getName(), place.getLatitude(), place.getLongitude(),
                         place.getRating());
